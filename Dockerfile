@@ -29,8 +29,8 @@ RUN pip install --upgrade pip && \
 # ============================================
 FROM base as api
 COPY src/ /app/src/
-COPY config/ /app/config/S
-COPY .env.example /app/.env
+COPY config/ /app/config/
+COPY .env /app/.env
 RUN mkdir -p /app/data/raw /app/data/processed /app/data/temp /app/logs
 EXPOSE 8000
 
