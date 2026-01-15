@@ -1,0 +1,96 @@
+application:
+  name: "ElectioAnalytics ETL Pipeline"
+  version: "1.0.0"
+  description: "Pipeline ETL pour l'analyse prédictive électorale"
+
+geographic:
+  # Zone géographique ciblée pour la POC
+  zone_type: "departement"  # commune, arrondissement, departement, circonscription
+  zone_code: "75"  # Code de la zone (ex: 75 pour Paris)
+  zone_name: "Paris"
+
+data_sources:
+  elections:
+    enabled: true
+    source_type: "csv"
+    encoding: "utf-8"
+    separator: ";"
+    
+  security:
+    enabled: true
+    source_type: "csv"
+    encoding: "utf-8"
+    separator: ";"
+    
+  employment:
+    enabled: true
+    source_type: "csv"
+    encoding: "utf-8"
+    separator: ";"
+    
+  demographics:
+    enabled: true
+    source_type: "csv"
+    encoding: "utf-8"
+    separator: ";"
+    
+  economy:
+    enabled: true
+    source_type: "csv"
+    encoding: "utf-8"
+    separator: ";"
+
+data_quality:
+  # Règles de validation des données
+  missing_values_threshold: 0.3  # 30% max de valeurs manquantes
+  date_format: "%Y-%m-%d"
+  date_range:
+    min_year: 2000
+    max_year: 2026
+  
+  # Nettoyage automatique
+  remove_duplicates: true
+  standardize_text: true
+  normalize_dates: true
+  handle_outliers: true
+
+etl:
+  # Configuration du pipeline
+  batch_size: 1000
+  max_workers: 4
+  retry_attempts: 3
+  retry_delay: 5  # secondes
+  
+  # Options de transformation
+  normalize_column_names: true
+  convert_numeric_strings: true
+  trim_whitespace: true
+
+database:
+  # Schéma de la base de données
+  schema_name: "electio_analytics"
+  
+  tables:
+    - name: "elections_results"
+      description: "Résultats électoraux historiques"
+      
+    - name: "security_indicators"
+      description: "Indicateurs de sécurité"
+      
+    - name: "employment_data"
+      description: "Données d'emploi"
+      
+    - name: "demographics"
+      description: "Données démographiques"
+      
+    - name: "economy_indicators"
+      description: "Indicateurs économiques"
+      
+    - name: "predictions"
+      description: "Prédictions du modèle"
+
+logging:
+  level: "INFO"
+  format: "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>"
+  rotation: "100 MB"
+  retention: "30 days"
