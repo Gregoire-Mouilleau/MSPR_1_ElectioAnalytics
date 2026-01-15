@@ -3,6 +3,9 @@ Application Streamlit pour ElectioAnalytics
 Dashboard de visualisation des données électorales
 """
 
+# Fichier de test pour Streamlit, pour prévisualiser le dashboard, 
+# a refaire complètement une fois l'ETL
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
