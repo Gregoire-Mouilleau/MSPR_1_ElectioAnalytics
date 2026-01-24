@@ -132,6 +132,31 @@ class DataCleaner:
         logger.info(f"{len(text_columns)} colonnes nettoyées")
         return df
     
+    def remove_empty_rows_and_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Supprime les lignes et colonnes entièrement vides
+        
+        Args:
+            df: DataFrame à nettoyer
+            
+        Returns:
+            DataFrame sans lignes ni colonnes vides
+        """
+        initial_rows = len(df)
+        initial_cols = len(df.columns)
+        
+        df = df.dropna(axis=1, how='all')
+        
+        df = df.dropna(axis=0, how='all')
+        
+        rows_removed = initial_rows - len(df)
+        cols_removed = initial_cols - len(df.columns)
+        
+        if rows_removed > 0 or cols_removed > 0:
+            logger.info(f"Lignes vides supprimées: {rows_removed}, Colonnes vides supprimées: {cols_removed}")
+        
+        return df
+    
     def handle_missing_values(
         self, 
         df: pd.DataFrame,

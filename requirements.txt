@@ -10,6 +10,8 @@ numpy==2.1.3
 openpyxl==3.1.2  # Pour fichiers .xlsx
 xlrd==2.0.1      # Pour fichiers .xls
 chardet==5.2.0   # Détection d'encodage automatique
+# pyarrow==14.0.1  # Pour fichiers .parquet (optionnel - peut causer des erreurs de compilation)
+# Alternative légère : fastparquet==2024.11.0
 
 # Base de données PostgreSQL
 sqlalchemy==2.0.25

@@ -205,6 +205,70 @@ class ETLPipeline:
             logger.error(f"Erreur dans le pipeline complet: {e}")
             raise
     
+    def process_socioeconomic_files(
+        self,
+        source_dir: Path,
+        output_dir: Path
+    ) -> Dict[str, int]:
+        """
+        Traite tous les fichiers socio-économiques (CSV et Parquet)
+        
+        Args:
+            source_dir: Répertoire contenant les fichiers bruts
+            output_dir: Répertoire de sortie pour les fichiers nettoyés
+            
+        Returns:
+            Dictionnaire avec statistiques (success_count, total_rows)
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        files = list(source_dir.glob("*.csv")) + list(source_dir.glob("*.parquet"))
+        
+        if not files:
+            logger.warning(f"Aucun fichier trouvé dans {source_dir}")
+            return {'success_count': 0, 'total_rows': 0}
+        
+        success_count = 0
+        total_rows = 0
+        logger.info(f"Fichiers trouvés: {len(files)}")
+        
+        for file_path in sorted(files):
+            logger.info(f"\n  Traitement: {file_path.name}")
+            
+            try:
+                if file_path.suffix == '.parquet':
+                    try:
+                        df = self.extractor.extract_parquet(file_path)
+                    except Exception as e:
+                        logger.warning(f"    ⚠ Fichier Parquet ignoré (bibliothèque non disponible)")
+                        continue
+                else:
+                    df = self.extractor.extract_csv(file_path)
+                
+                initial_rows = len(df)
+                logger.info(f"    Lignes: {initial_rows:,} | Colonnes: {len(df.columns)}")
+                
+                df = self.cleaner.remove_empty_rows_and_columns(df)
+                df = self.cleaner.remove_duplicates(df)
+                
+                cleaned_rows = len(df)
+                
+                output_filename = f"{file_path.stem}_cleaned.csv"
+                output_path = output_dir / output_filename
+                
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                df.to_csv(output_path, index=False, encoding='utf-8', sep=';', na_rep='NA')
+                
+                logger.info(f"    ✓ Sauvegardé: {output_filename} ({cleaned_rows:,} lignes)")
+                
+                success_count += 1
+                total_rows += cleaned_rows
+                
+            except Exception as e:
+                logger.error(f"    ✗ Erreur: {e}")
+        
+        return {'success_count': success_count, 'total_rows': total_rows, 'total_files': len(files)}
+    
     def get_pipeline_status(self) -> Dict:
         """
         Récupère le statut et les statistiques du pipeline

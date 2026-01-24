@@ -212,6 +212,41 @@ class DataExtractor:
             logger.error(f"Erreur lors de l'extraction JSON: {e}")
             raise
     
+    def extract_parquet(
+        self,
+        file_path: Union[str, Path],
+        **kwargs
+    ) -> pd.DataFrame:
+        """
+        Extrait les données d'un fichier Parquet
+        
+        Args:
+            file_path: Chemin vers le fichier Parquet
+            **kwargs: Paramètres supplémentaires pour pd.read_parquet
+            
+        Returns:
+            DataFrame pandas contenant les données
+        """
+        try:
+            file_path = Path(file_path)
+            
+            logger.info(f"Extraction Parquet depuis: {file_path}")
+            
+            df = pd.read_parquet(
+                file_path,
+                **kwargs
+            )
+            
+            logger.info(f"Parquet extrait avec succès: {len(df)} lignes, {len(df.columns)} colonnes")
+            return df
+            
+        except FileNotFoundError:
+            logger.error(f"Fichier introuvable: {file_path}")
+            raise
+        except Exception as e:
+            logger.error(f"Erreur lors de l'extraction Parquet: {e}")
+            raise
+    
     def extract_auto(
         self,
         file_path: Union[str, Path],
@@ -219,7 +254,7 @@ class DataExtractor:
     ) -> pd.DataFrame:
         """
         Extrait automatiquement les données selon l'extension du fichier
-        Supporte: .csv, .txt, .xlsx, .xls, .json
+        Supporte: .csv, .txt, .xlsx, .xls, .json, .parquet
         
         Args:
             file_path: Chemin vers le fichier
@@ -250,6 +285,8 @@ class DataExtractor:
             return self.extract_excel(file_path, **kwargs)
         elif extension == '.json':
             return self.extract_json(file_path, **kwargs)
+        elif extension == '.parquet':
+            return self.extract_parquet(file_path, **kwargs)
         else:
             raise ValueError(f"Format de fichier non supporté: {extension}")
     

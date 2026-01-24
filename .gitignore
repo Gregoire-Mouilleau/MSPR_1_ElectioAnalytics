@@ -37,10 +37,12 @@ ENV/
 .env
 
 # Data files
-data/raw/*
-data/processed/*
-data/temp/*
+data/raw/**
+data/filtered/**
+data/processed/**
+data/temp/**
 !data/raw/.gitkeep
+!data/filtered/.gitkeep
 !data/processed/.gitkeep
 !data/temp/.gitkeep
 

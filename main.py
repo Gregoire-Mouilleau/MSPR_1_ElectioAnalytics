@@ -315,6 +315,33 @@ def process_filtered_files():
 
 
 # ============================================================================
+# EXTRACTION DONNÉES SOCIO-ÉCONOMIQUES - DOSSIER AUTRES
+# ============================================================================
+
+def extract_autres():
+    """Extrait et nettoie les données socio-économiques (chômage, revenus, délinquance, etc.)"""
+    
+    from src.etl.pipeline import ETLPipeline
+    
+    raw_dir = Path("data/raw/autres")
+    output_dir = Path("data/filtered/autres")
+    
+    logger.info("\n" + "="*60)
+    logger.info("EXTRACTION DONNÉES SOCIO-ÉCONOMIQUES - AUTRES")
+    logger.info("="*60)
+    
+    pipeline = ETLPipeline()
+    results = pipeline.process_socioeconomic_files(raw_dir, output_dir)
+    
+    success_count = results['success_count']
+    total_rows = results['total_rows']
+    total_files = results['total_files']
+    
+    logger.info(f"\n  Résumé: {success_count}/{total_files} fichiers traités, {total_rows:,} lignes totales")
+    return success_count
+
+
+# ============================================================================
 # FONCTION PRINCIPALE
 # ============================================================================
 
@@ -334,6 +361,8 @@ def main():
         
         results['presidentielles'] = extract_presidentielles()
         
+        results['autres'] = extract_autres()
+        
         logger.info("\n" + "#"*60)
         logger.info("RÉSUMÉ FINAL")
         logger.info("#"*60)
@@ -343,6 +372,10 @@ def main():
             count = results.get(election_type, 0)
             status = "✓" if count > 0 else "✗"
             logger.info(f"  {status} {election_type.capitalize()}: {count} fichiers extraits")
+        
+        autres_count = results.get('autres', 0)
+        if autres_count > 0:
+            logger.info(f"  ✓ Données socio-économiques: {autres_count} fichiers extraits")
         
         logger.info("\n" + "#"*60)
         logger.info("✅ EXTRACTION TERMINÉE AVEC SUCCÈS")
