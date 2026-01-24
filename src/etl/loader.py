@@ -6,11 +6,20 @@ Gère l'insertion des données dans PostgreSQL et la sauvegarde en fichiers
 import pandas as pd
 from pathlib import Path
 from typing import Optional, Union
-from sqlalchemy import text
-from loguru import logger
+import logging
 
-from src.config import settings
-from src.database import db_manager
+logger = logging.getLogger(__name__)
+
+try:
+    from sqlalchemy import text
+    from src.config import settings
+    from src.database import db_manager
+except ImportError:
+    logger.warning("SQLAlchemy non disponible, les fonctions de base de données seront désactivées")
+    class Settings:
+        data_processed_path = Path('data/processed')
+    settings = Settings()
+    db_manager = None
 
 
 class DataLoader:
@@ -65,7 +74,7 @@ class DataLoader:
                 method='multi'
             )
             
-            logger.success(
+            logger.info(
                 f"{len(df)} lignes insérées dans {schema}.{table_name}"
             )
             
@@ -99,6 +108,7 @@ class DataLoader:
         self,
         df: pd.DataFrame,
         filename: str,
+        subfolder: Optional[str] = None,
         **kwargs
     ) -> Path:
         """
@@ -107,12 +117,18 @@ class DataLoader:
         Args:
             df: DataFrame à sauvegarder
             filename: Nom du fichier de sortie
+            subfolder: Sous-dossier optionnel (ex: 'legislatives', 'presidentielles')
             **kwargs: Paramètres supplémentaires pour to_csv
             
         Returns:
             Chemin du fichier créé
         """
-        output_file = self.output_path / filename
+        if subfolder:
+            output_dir = self.output_path / subfolder
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_file = output_dir / filename
+        else:
+            output_file = self.output_path / filename
         
         logger.info(f"Sauvegarde CSV: {output_file}")
         
@@ -121,10 +137,12 @@ class DataLoader:
                 output_file,
                 index=False,
                 encoding='utf-8',
+                sep=';',
+                na_rep='NA',
                 **kwargs
             )
             
-            logger.success(f"CSV sauvegardé: {len(df)} lignes, {output_file.stat().st_size / 1024:.2f} KB")
+            logger.info(f"CSV sauvegardé: {len(df)} lignes, {output_file.stat().st_size / 1024:.2f} KB")
             return output_file
             
         except Exception as e:
@@ -162,7 +180,7 @@ class DataLoader:
                 **kwargs
             )
             
-            logger.success(f"Excel sauvegardé: {len(df)} lignes, {output_file.stat().st_size / 1024:.2f} KB")
+            logger.info(f"Excel sauvegardé: {len(df)} lignes, {output_file.stat().st_size / 1024:.2f} KB")
             return output_file
             
         except Exception as e:
@@ -201,7 +219,7 @@ class DataLoader:
                 **kwargs
             )
             
-            logger.success(f"JSON sauvegardé: {len(df)} lignes, {output_file.stat().st_size / 1024:.2f} KB")
+            logger.info(f"JSON sauvegardé: {len(df)} lignes, {output_file.stat().st_size / 1024:.2f} KB")
             return output_file
             
         except Exception as e:
@@ -278,7 +296,7 @@ class DataLoader:
             with db_manager.get_session() as session:
                 session.execute(text(sql_content))
             
-            logger.success(f"Fichier SQL exécuté avec succès")
+            logger.info(f"Fichier SQL exécuté avec succès")
             
         except Exception as e:
             logger.error(f"Erreur lors de l'exécution du fichier SQL: {e}")

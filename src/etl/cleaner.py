@@ -8,7 +8,9 @@ import numpy as np
 from typing import List, Union, Optional, Dict
 from datetime import datetime
 import re
-from loguru import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DataCleaner:
@@ -49,7 +51,7 @@ class DataCleaner:
             return name
         
         df.columns = [normalize_name(col) for col in df.columns]
-        logger.success(f"Colonnes normalisées: {list(df.columns)}")
+        logger.info(f"Colonnes normalisées: {list(df.columns)}")
         return df
     
     def normalize_dates(
@@ -87,7 +89,7 @@ class DataCleaner:
                 if invalid_count > 0:
                     logger.warning(f"Colonne {col}: {invalid_count} dates invalides converties en NaT")
                 
-                logger.success(f"Colonne {col} normalisée en datetime")
+                logger.info(f"Colonne {col} normalisée en datetime")
                 
             except Exception as e:
                 logger.error(f"Erreur lors de la normalisation de {col}: {e}")
@@ -127,7 +129,7 @@ class DataCleaner:
             # Suppression des caractères de contrôle
             df[col] = df[col].str.replace(r'[\x00-\x1f\x7f-\x9f]', '', regex=True)
         
-        logger.success(f"{len(text_columns)} colonnes nettoyées")
+        logger.info(f"{len(text_columns)} colonnes nettoyées")
         return df
     
     def handle_missing_values(
@@ -187,7 +189,7 @@ class DataCleaner:
         
         # Rapport final
         missing_after = df.isna().sum().sum()
-        logger.success(f"Valeurs manquantes restantes: {missing_after}")
+        logger.info(f"Valeurs manquantes restantes: {missing_after}")
         
         return df
     
@@ -249,7 +251,7 @@ class DataCleaner:
                 df[col] = df[col].str.replace(',', '.', regex=False)  # Conversion décimales
                 df[col] = pd.to_numeric(df[col], errors='coerce')
                 
-                logger.success(f"Colonne {col} convertie en numérique")
+                logger.info(f"Colonne {col} convertie en numérique")
                 
             except Exception as e:
                 logger.error(f"Erreur lors de la conversion de {col}: {e}")
@@ -278,7 +280,7 @@ class DataCleaner:
                 continue
             
             df[col] = df[col].replace(mapping)
-            logger.success(f"Colonne {col} standardisée avec {len(mapping)} mappings")
+            logger.info(f"Colonne {col} standardisée avec {len(mapping)} mappings")
         
         return df
     
@@ -347,7 +349,7 @@ class DataCleaner:
                     # Marquer les lignes invalides
                     df.loc[~mask, f'_invalid_{rule_name}'] = True
                 else:
-                    logger.success(f"Règle '{rule_name}': Toutes les lignes valides")
+                    logger.info(f"Règle '{rule_name}': Toutes les lignes valides")
                     
             except Exception as e:
                 logger.error(f"Erreur lors de l'application de la règle '{rule_name}': {e}")
@@ -457,7 +459,7 @@ class DataCleaner:
         logger.info(f"Données supprimées: "
                    f"{initial_report['total_rows'] - final_report['total_rows']} lignes "
                    f"({((initial_report['total_rows'] - final_report['total_rows']) / initial_report['total_rows'])*100:.2f}%)")
-        logger.success("Pipeline de nettoyage terminé avec succès")
+        logger.info("Pipeline de nettoyage terminé avec succès")
         logger.info("=" * 50)
         
         return df

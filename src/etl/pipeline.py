@@ -72,7 +72,7 @@ class ETLPipeline:
             self.loader.load_to_database(df, 'elections_results')
             self.loader.load_to_csv(df, 'elections_cleaned.csv')
             
-            logger.success("=== Pipeline Élections terminé ===")
+            logger.info("=== Pipeline Élections terminé ===")
             return df
             
         except Exception as e:
@@ -115,7 +115,7 @@ class ETLPipeline:
             self.loader.load_to_database(df, 'security_indicators')
             self.loader.load_to_csv(df, 'security_cleaned.csv')
             
-            logger.success("=== Pipeline Sécurité terminé ===")
+            logger.info("=== Pipeline Sécurité terminé ===")
             return df
             
         except Exception as e:
@@ -158,7 +158,7 @@ class ETLPipeline:
             self.loader.load_to_database(df, 'employment_data')
             self.loader.load_to_csv(df, 'employment_cleaned.csv')
             
-            logger.success("=== Pipeline Emploi terminé ===")
+            logger.info("=== Pipeline Emploi terminé ===")
             return df
             
         except Exception as e:
@@ -198,7 +198,7 @@ class ETLPipeline:
             # Pipeline Emploi
             results['employment'] = self.run_employment_pipeline(employment_file, zone_code)
             
-            logger.success("=== PIPELINE COMPLET TERMINÉ ===")
+            logger.info("=== PIPELINE COMPLET TERMINÉ ===")
             return results
             
         except Exception as e:

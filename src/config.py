@@ -6,10 +6,21 @@ Charge les variables d'environnement et le fichier config.yaml
 import os
 from pathlib import Path
 from typing import Any, Dict
-import yaml
-from dotenv import load_dotenv
-from pydantic_settings import BaseSettings
-from loguru import logger
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    logger.info("python-dotenv non installé, utilisation des variables d'environnement système")
+
+try:
+    from pydantic_settings import BaseSettings
+except ImportError:
+    BaseSettings = object
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -72,7 +83,7 @@ class Settings(BaseSettings):
 
 def load_yaml_config(config_file: str = "config.yaml") -> Dict[str, Any]:
     """
-    Charge la configuration depuis le fichier YAML
+    Charge la configuration depuis le fichier JSON/YAML
     
     Args:
         config_file: Nom du fichier de configuration
@@ -82,39 +93,35 @@ def load_yaml_config(config_file: str = "config.yaml") -> Dict[str, Any]:
     """
     config_path = CONFIG_DIR / config_file
     
-    if not config_path.exists():
-        logger.warning(f"Fichier de configuration {config_path} introuvable. Utilisation des valeurs par défaut.")
-        return {}
+    json_path = config_path.with_suffix('.json')
+    if json_path.exists():
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                logger.info(f"Configuration chargée depuis {json_path}")
+                return config
+        except Exception as e:
+            logger.error(f"Erreur lors du chargement de la configuration: {e}")
     
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-            logger.info(f"Configuration chargée depuis {config_path}")
-            return config
-    except Exception as e:
-        logger.error(f"Erreur lors du chargement de la configuration: {e}")
-        return {}
+    logger.info("Pas de fichier de configuration, utilisation des valeurs par défaut")
+    return {}
 
 
-# Instance globale des settings
-settings = Settings()
+try:
+    settings = Settings()
+except:
+    class SimpleSettings:
+        data_raw_path = DATA_DIR / 'raw'
+        data_processed_path = DATA_DIR / 'processed'
+        data_temp_path = DATA_DIR / 'temp'
+        logs_path = LOGS_DIR
+        database_url = 'sqlite:///data/electio.db'
+    settings = SimpleSettings()
 
-# Chargement de la configuration YAML
 yaml_config = load_yaml_config()
 
-# Configuration du logger
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
-logger.add(
-    settings.logs_path / "electio_{time:YYYY-MM-DD}.log",
-    rotation="100 MB",
-    retention="30 days",
-    level=settings.log_level,
-    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function} - {message}"
-)
-
-# Création des répertoires nécessaires
 for path in [settings.data_raw_path, settings.data_processed_path, settings.data_temp_path]:
-    path.mkdir(parents=True, exist_ok=True)
-    logger.debug(f"Répertoire créé/vérifié: {path}")
+    Path(path).mkdir(parents=True, exist_ok=True)
 
-logger.info(f"Configuration chargée - Environnement: {settings.env}")
+logger.info(f"Configuration chargée")

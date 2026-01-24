@@ -5,10 +5,15 @@ Applique les transformations métier spécifiques au projet
 
 import pandas as pd
 import numpy as np
-from typing import Optional, List, Dict
-from loguru import logger
+from typing import Optional, List, Dict, Union
+import logging
 
-from src.config import yaml_config
+logger = logging.getLogger(__name__)
+
+try:
+    from src.config import yaml_config
+except ImportError:
+    yaml_config = {'geographic': {}}
 
 
 class DataTransformer:
@@ -17,6 +22,319 @@ class DataTransformer:
     def __init__(self):
         self.geographic_config = yaml_config.get('geographic', {})
         logger.info("DataTransformer initialisé")
+    
+    # ============================================================================
+    # MÉTHODES SPÉCIFIQUES AUX DONNÉES ÉLECTORALES
+    # ============================================================================
+    
+    def identify_election_type(self, df: pd.DataFrame) -> str:
+        """
+        Identifie automatiquement le type d'élection à partir des colonnes
+        
+        Args:
+            df: DataFrame à analyser
+            
+        Returns:
+            Type d'élection ('presidentielles', 'legislatives', 'europeennes', 'unknown')
+        """
+        columns_lower = [col.lower() for col in df.columns]
+        
+        if any('président' in col or 'presid' in col for col in columns_lower):
+            logger.info("Type détecté: Présidentielles")
+            return 'presidentielles'
+        elif any('législ' in col or 'legisl' in col or 'député' in col or 'depute' in col for col in columns_lower):
+            logger.info("Type détecté: Législatives")
+            return 'legislatives'
+        elif any('europ' in col or 'parlement' in col for col in columns_lower):
+            logger.info("Type détecté: Européennes")
+            return 'europeennes'
+        else:
+            logger.warning("Type d'élection non détecté")
+            return 'unknown'
+    
+    def standardize_electoral_columns(
+        self, 
+        df: pd.DataFrame, 
+        election_type: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        Standardise les noms de colonnes selon le type d'élection
+        
+        Args:
+            df: DataFrame à standardiser
+            election_type: Type d'élection (auto-détecté si None)
+            
+        Returns:
+            DataFrame avec colonnes standardisées
+        """
+        if election_type is None:
+            election_type = self.identify_election_type(df)
+        
+        df = df.copy()
+        
+        common_mappings = {
+            'code_departement': ['code_dept', 'code_dpt', 'dept', 'departement'],
+            'code_commune': ['code_com', 'commune_code', 'insee'],
+            'libelle_commune': ['commune', 'nom_commune', 'ville'],
+            'code_circonscription': ['code_circ', 'circonscription'],
+            
+            'inscrits': ['nb_inscrits', 'electeurs_inscrits', 'inscrit'],
+            'votants': ['nb_votants', 'votant'],
+            'abstentions': ['nb_abstentions', 'abstention'],
+            'blancs': ['nb_blancs', 'votes_blancs', 'blanc'],
+            'nuls': ['nb_nuls', 'votes_nuls', 'nul'],
+            'exprimes': ['nb_exprimes', 'suffrages_exprimes', 'exprime'],
+            
+            'nom_candidat': ['candidat', 'nom', 'nom_liste', 'liste'],
+            'prenom_candidat': ['prenom'],
+            'parti': ['parti_politique', 'nuance', 'etiquette'],
+            'voix': ['nb_voix', 'suffrages', 'nombre_voix'],
+            
+            'date_election': ['date', 'date_scrutin'],
+            'tour': ['numero_tour', 'num_tour'],
+            'annee': ['année', 'year']
+        }
+        
+        for standard_name, variants in common_mappings.items():
+            for col in df.columns:
+                col_lower = col.lower().strip()
+                if col_lower in variants or col_lower == standard_name:
+                    df.rename(columns={col: standard_name}, inplace=True)
+                    logger.debug(f"Colonne renommée: {col} -> {standard_name}")
+                    break
+        
+        logger.info(f"Colonnes standardisées pour {election_type}")
+        return df
+    
+    def calculate_electoral_percentages(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calcule les pourcentages de participation et de votes
+        
+        Args:
+            df: DataFrame avec données électorales
+            
+        Returns:
+            DataFrame avec colonnes de pourcentages ajoutées
+        """
+        df = df.copy()
+        
+        if 'inscrits' in df.columns and 'votants' in df.columns:
+            df['votants'] = pd.to_numeric(df['votants'], errors='coerce')
+            df['inscrits'] = pd.to_numeric(df['inscrits'], errors='coerce')
+            df['taux_participation'] = (df['votants'] / df['inscrits'] * 100).round(2)
+            logger.info("Taux de participation calculé")
+        
+        if 'inscrits' in df.columns and 'abstentions' in df.columns:
+            df['abstentions'] = pd.to_numeric(df['abstentions'], errors='coerce')
+            df['taux_abstention'] = (df['abstentions'] / df['inscrits'] * 100).round(2)
+            logger.info("Taux d'abstention calculé")
+        
+        if 'votants' in df.columns:
+            if 'blancs' in df.columns:
+                df['blancs'] = pd.to_numeric(df['blancs'], errors='coerce')
+                df['taux_blancs'] = (df['blancs'] / df['votants'] * 100).round(2)
+            if 'nuls' in df.columns:
+                df['nuls'] = pd.to_numeric(df['nuls'], errors='coerce')
+                df['taux_nuls'] = (df['nuls'] / df['votants'] * 100).round(2)
+        
+        if 'voix' in df.columns and 'exprimes' in df.columns:
+            df['voix'] = pd.to_numeric(df['voix'], errors='coerce')
+            df['exprimes'] = pd.to_numeric(df['exprimes'], errors='coerce')
+            df['pourcentage_voix'] = (df['voix'] / df['exprimes'] * 100).round(2)
+            logger.info("Pourcentage des voix calculé")
+        
+        return df
+    
+    def aggregate_electoral_results(
+        self,
+        df: pd.DataFrame,
+        level: str = 'commune',
+        group_by_tour: bool = True
+    ) -> pd.DataFrame:
+        """
+        Agrège les résultats électoraux par niveau géographique
+        
+        Args:
+            df: DataFrame avec résultats détaillés
+            level: Niveau d'agrégation ('commune', 'circonscription', 'departement')
+            group_by_tour: Si True, agrège aussi par tour
+            
+        Returns:
+            DataFrame agrégé
+        """
+        group_cols = []
+        
+        if level == 'commune' and 'code_commune' in df.columns:
+            group_cols.append('code_commune')
+            if 'libelle_commune' in df.columns:
+                group_cols.append('libelle_commune')
+        
+        if level == 'circonscription' and 'code_circonscription' in df.columns:
+            group_cols.append('code_circonscription')
+        
+        if level == 'departement' and 'code_departement' in df.columns:
+            group_cols.append('code_departement')
+        
+        if 'nom_candidat' in df.columns:
+            group_cols.append('nom_candidat')
+        
+        if 'parti' in df.columns:
+            group_cols.append('parti')
+        
+        if group_by_tour and 'tour' in df.columns:
+            group_cols.append('tour')
+        
+        if not group_cols:
+            logger.warning("Aucune colonne de groupement trouvée")
+            return df
+        
+        agg_dict = {}
+        numeric_cols = ['inscrits', 'votants', 'abstentions', 'blancs', 'nuls', 'exprimes', 'voix']
+        
+        for col in numeric_cols:
+            if col in df.columns:
+                agg_dict[col] = 'sum'
+        
+        if not agg_dict:
+            logger.warning("Aucune colonne numérique à agréger")
+            return df
+        
+        logger.info(f"Agrégation par {level}, colonnes: {group_cols}")
+        df_agg = df.groupby(group_cols, as_index=False).agg(agg_dict)
+        
+        df_agg = self.calculate_electoral_percentages(df_agg)
+        
+        logger.info(f"Agrégation terminée: {len(df_agg)} lignes")
+        return df_agg
+    
+    def add_electoral_rankings(
+        self,
+        df: pd.DataFrame,
+        group_by: Optional[List[str]] = None
+    ) -> pd.DataFrame:
+        """
+        Ajoute le classement des candidats par nombre de voix
+        
+        Args:
+            df: DataFrame avec résultats
+            group_by: Colonnes de groupement (commune, tour, etc.)
+            
+        Returns:
+            DataFrame avec colonne 'rang' ajoutée
+        """
+        if 'voix' not in df.columns:
+            logger.warning("Colonne 'voix' introuvable, impossible de calculer les rangs")
+            return df
+        
+        df = df.copy()
+        
+        if group_by is None:
+            group_by = []
+            if 'code_commune' in df.columns:
+                group_by.append('code_commune')
+            if 'tour' in df.columns:
+                group_by.append('tour')
+        
+        if group_by:
+            df['rang'] = df.groupby(group_by)['voix'].rank(method='dense', ascending=False).astype('Int64')
+            logger.info(f"Rangs calculés par {group_by}")
+        else:
+            df['rang'] = df['voix'].rank(method='dense', ascending=False).astype('Int64')
+            logger.info("Rangs calculés globalement")
+        
+        return df
+    
+    def filter_qualified_candidates(
+        self,
+        df: pd.DataFrame,
+        tour: int = 1,
+        top_n: int = 2
+    ) -> pd.DataFrame:
+        """
+        Filtre les candidats qualifiés pour le tour suivant
+        
+        Args:
+            df: DataFrame avec résultats du tour
+            tour: Numéro du tour
+            top_n: Nombre de candidats qualifiés (2 pour présidentielles)
+            
+        Returns:
+            DataFrame avec candidats qualifiés
+        """
+        if 'tour' not in df.columns or 'rang' not in df.columns:
+            logger.warning("Colonnes 'tour' et/ou 'rang' introuvables")
+            return df
+        
+        df_qualified = df[(df['tour'] == tour) & (df['rang'] <= top_n)].copy()
+        logger.info(f"Candidats qualifiés du tour {tour}: {len(df_qualified)} lignes")
+        
+        return df_qualified
+    
+    def add_election_metadata(
+        self,
+        df: pd.DataFrame,
+        election_type: str,
+        annee: Optional[int] = None
+    ) -> pd.DataFrame:
+        """
+        Ajoute les métadonnées sur l'élection
+        
+        Args:
+            df: DataFrame à enrichir
+            election_type: Type d'élection
+            annee: Année de l'élection
+            
+        Returns:
+            DataFrame enrichi
+        """
+        df = df.copy()
+        df['type_election'] = election_type
+        
+        if annee:
+            df['annee'] = annee
+        
+        logger.info(f"Métadonnées ajoutées: {election_type}")
+        return df
+    
+    def calculate_electoral_swing(
+        self,
+        df_current: pd.DataFrame,
+        df_previous: pd.DataFrame,
+        join_on: List[str] = ['code_commune', 'nom_candidat']
+    ) -> pd.DataFrame:
+        """
+        Calcule l'évolution (swing) entre deux élections
+        
+        Args:
+            df_current: Résultats de l'élection actuelle
+            df_previous: Résultats de l'élection précédente
+            join_on: Colonnes de jointure
+            
+        Returns:
+            DataFrame avec colonnes d'évolution
+        """
+        for col in join_on:
+            if col not in df_current.columns or col not in df_previous.columns:
+                logger.error(f"Colonne de jointure manquante: {col}")
+                return df_current
+        
+        if 'pourcentage_voix' not in df_current.columns or 'pourcentage_voix' not in df_previous.columns:
+            logger.warning("Colonne 'pourcentage_voix' manquante, calcul impossible")
+            return df_current
+        
+        df_merged = df_current.merge(
+            df_previous[join_on + ['pourcentage_voix']],
+            on=join_on,
+            how='left',
+            suffixes=('', '_previous')
+        )
+        
+        df_merged['evolution_pourcentage'] = (
+            df_merged['pourcentage_voix'] - df_merged['pourcentage_voix_previous']
+        ).round(2)
+        
+        logger.info("Évolution calculée entre les deux élections")
+        return df_merged
     
     def filter_by_geographic_zone(
         self, 
@@ -48,7 +366,7 @@ class DataTransformer:
         df_filtered = df[df[zone_column].astype(str) == str(zone_code)].copy()
         filtered_count = len(df_filtered)
         
-        logger.success(
+        logger.info(
             f"Filtrage terminé: {filtered_count}/{initial_count} lignes "
             f"({(filtered_count/initial_count)*100:.1f}%)"
         )
@@ -88,7 +406,7 @@ class DataTransformer:
                 value_column: agg_func
             }).reset_index()
             
-            logger.success(f"Agrégation réussie: {len(df_agg)} périodes")
+            logger.info(f"Agrégation réussie: {len(df_agg)} périodes")
             return df_agg
             
         except Exception as e:
@@ -126,7 +444,7 @@ class DataTransformer:
             # Gestion des valeurs infinies et NaN
             df[output_col] = df[output_col].replace([np.inf, -np.inf], np.nan)
             
-            logger.success(f"Taux calculé: {output_col}")
+            logger.info(f"Taux calculé: {output_col}")
             return df
             
         except Exception as e:
@@ -156,7 +474,7 @@ class DataTransformer:
             df[date_column] = pd.to_datetime(df[date_column])
             df[year_column] = df[date_column].dt.year
             
-            logger.success(f"Colonne {year_column} créée")
+            logger.info(f"Colonne {year_column} créée")
             return df
             
         except Exception as e:
@@ -195,7 +513,7 @@ class DataTransformer:
             df['month_sin'] = np.sin(2 * np.pi * df['month'] / 12)
             df['month_cos'] = np.cos(2 * np.pi * df['month'] / 12)
             
-            logger.success("Features ML créées avec succès")
+            logger.info("Features ML créées avec succès")
             return df
             
         except Exception as e:
@@ -239,7 +557,7 @@ class DataTransformer:
                     std_val = df[col].std()
                     df[f'{col}_normalized'] = (df[col] - mean_val) / std_val
                 
-                logger.success(f"Colonne {col} normalisée")
+                logger.info(f"Colonne {col} normalisée")
                 
             except Exception as e:
                 logger.error(f"Erreur lors de la normalisation de {col}: {e}")
@@ -277,7 +595,7 @@ class DataTransformer:
                 suffixes=suffixes
             )
             
-            logger.success(
+            logger.info(
                 f"Fusion réussie: {len(df1)} + {len(df2)} -> {len(df_merged)} lignes"
             )
             return df_merged
@@ -310,12 +628,12 @@ class DataTransformer:
                 stats = df.groupby(group_by)[columns].agg([
                     'count', 'sum', 'mean', 'median', 'std', 'min', 'max'
                 ]).reset_index()
-                logger.success(f"Statistiques calculées par groupes: {group_by}")
+                logger.info(f"Statistiques calculées par groupes: {group_by}")
             else:
                 stats = df[columns].agg([
                     'count', 'sum', 'mean', 'median', 'std', 'min', 'max'
                 ]).T
-                logger.success("Statistiques globales calculées")
+                logger.info("Statistiques globales calculées")
             
             return stats
             
@@ -351,7 +669,7 @@ class DataTransformer:
                 df[output_column] = df[value_column].pct_change() * 100
             
             df[output_column] = df[output_column].round(2)
-            logger.success(f"Taux de variation calculé: {output_column}")
+            logger.info(f"Taux de variation calculé: {output_column}")
             return df
             
         except Exception as e:
@@ -383,7 +701,7 @@ class DataTransformer:
         
         if existing_columns:
             df = df.rename(columns=existing_columns)
-            logger.success(f"Colonnes harmonisées: {list(existing_columns.values())}")
+            logger.info(f"Colonnes harmonisées: {list(existing_columns.values())}")
         else:
             logger.warning("Aucune colonne à harmoniser trouvée")
         
@@ -415,7 +733,7 @@ class DataTransformer:
         for var_name, func in derivations.items():
             try:
                 df[var_name] = func(df)
-                logger.success(f"Variable dérivée créée: {var_name}")
+                logger.info(f"Variable dérivée créée: {var_name}")
             except Exception as e:
                 logger.error(f"Erreur lors de la création de {var_name}: {e}")
         
@@ -451,8 +769,7 @@ class DataTransformer:
         
         initial_rows = len(df)
         logger.info(f"État initial: {initial_rows} lignes, {len(df.columns)} colonnes")
-        
-        # Étape 1: Filtrage géographique
+
         if config.get('geographic_filter'):
             geo_config = config['geographic_filter']
             df = self.filter_by_geographic_zone(
@@ -461,16 +778,14 @@ class DataTransformer:
                 zone_code=geo_config.get('zone_code')
             )
         
-        # Étape 2: Harmonisation des noms de colonnes
         if config.get('column_mapping'):
             df = self.harmonize_column_names(df, config['column_mapping'])
         
-        # Étape 3: Standardisation des dates
         if config.get('date_columns'):
             for date_col in config['date_columns']:
                 if date_col in df.columns:
                     df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
-                    logger.success(f"Date standardisée: {date_col}")
+                    logger.info(f"Date standardisée: {date_col}")
         
         # Étape 4: Calcul des taux
         if config.get('calculate_rates'):
@@ -483,11 +798,9 @@ class DataTransformer:
                     multiply_by=rate_config.get('multiply_by', 100.0)
                 )
         
-        # Étape 5: Création de variables dérivées
         if config.get('derived_variables'):
             df = self.create_derived_variables(df, config['derived_variables'])
         
-        # Étape 6: Calcul des statistiques
         if config.get('calculate_statistics'):
             stats_config = config['calculate_statistics']
             stats = self.calculate_statistics(
@@ -497,18 +810,17 @@ class DataTransformer:
             )
             logger.info(f"Statistiques:\n{stats}")
         
-        # Étape 7: Sauvegarde
         if config.get('save_output'):
             output_path = config.get('output_path', '../data/processed/transformed_data.csv')
             df.to_csv(output_path, index=False)
-            logger.success(f"Données transformées sauvegardées: {output_path}")
+            logger.info(f"Données transformées sauvegardées: {output_path}")
         
         # Rapport final
         final_rows = len(df)
         logger.info("=" * 50)
         logger.info(f"État final: {final_rows} lignes, {len(df.columns)} colonnes")
         logger.info(f"Lignes conservées: {(final_rows/initial_rows)*100:.1f}%")
-        logger.success("Pipeline de transformation terminé avec succès")
+        logger.info("Pipeline de transformation terminé avec succès")
         logger.info("=" * 50)
         
         return df
